@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import {
   courseInputSchema,
+  questionDraftRequestSchema,
   questionInputSchema,
   reviewSubmitSchema,
   settingsSchema,
@@ -15,6 +16,7 @@ import { clearSessionCookie, currentUser } from '../middleware/auth.js';
 import { deleteUser, findUserById, toPublicUser, updateUserSettings } from '../repositories/users.js';
 import * as courses from '../services/courses.js';
 import { loadDemoData, removeDemoData } from '../services/demo.js';
+import { draftQuestions } from '../services/questionFlow.js';
 import { getReviewQueue, getReviewSession, submitReview } from '../services/reviews.js';
 import { getDashboard, getProgress, getReminderDigest, getUpcoming } from '../services/stats.js';
 import * as topics from '../services/topics.js';
@@ -87,6 +89,14 @@ export function studyRoutes(ctx: AppContext): Router {
   router.delete('/questions/:id', (req, res) => {
     topics.removeQuestion(ctx, currentUser(req).id, parseId(req.params.id, 'That question'));
     res.status(204).end();
+  });
+
+  router.post('/question-drafts', async (req, res) => {
+    const drafts = await draftQuestions(ctx, currentUser(req).id, parse(questionDraftRequestSchema, req.body));
+    res.json({ drafts });
+  });
+  router.get('/features', (_req, res) => {
+    res.json({ questionGeneration: ctx.questionGenerator !== null });
   });
 
   // Reviews

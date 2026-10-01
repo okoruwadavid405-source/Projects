@@ -115,4 +115,14 @@ export const migrations: Migration[] = [
       CREATE INDEX idx_review_answers_question ON review_answers(question_id);
     `,
   },
+  {
+    id: 2,
+    name: 'question_source_and_kind',
+    sql: /* sql */ `
+      ALTER TABLE questions ADD COLUMN source TEXT NOT NULL DEFAULT 'manual'
+        CHECK (source IN ('manual', 'generated'));
+      ALTER TABLE questions ADD COLUMN kind TEXT
+        CHECK (kind IS NULL OR kind IN ('recall', 'explain', 'apply', 'compare', 'troubleshoot'));
+    `,
+  },
 ];

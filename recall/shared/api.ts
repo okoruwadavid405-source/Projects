@@ -1,7 +1,7 @@
 /** Response shapes shared by the API and the client. */
 import type { LocalDate } from './dates.js';
 import type { Rating, TopicDisplayStatus, TopicStage } from './scheduler.js';
-import type { CourseColor } from './validation.js';
+import type { CourseColor, QuestionKind, QuestionSource } from './validation.js';
 
 export interface User {
   id: number;
@@ -58,6 +58,8 @@ export interface Question {
   topicId: number;
   prompt: string;
   answer: string;
+  source: QuestionSource;
+  kind: QuestionKind | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -80,6 +82,8 @@ export interface TopicDetail extends TopicSummary {
   questions: Question[];
   reviews: ReviewRecord[];
   projected: LocalDate[];
+  /** True while Recall is writing questions for this topic in the background. */
+  generatingQuestions: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -87,7 +91,7 @@ export interface TopicDetail extends TopicSummary {
 export interface ReviewSession {
   topic: TopicSummary;
   mode: 'questions' | 'free';
-  questions: Pick<Question, 'id' | 'prompt' | 'answer'>[];
+  questions: (Pick<Question, 'id' | 'prompt' | 'answer' | 'kind'> & { isNew: boolean })[];
   today: LocalDate;
 }
 
@@ -175,6 +179,17 @@ export interface ReminderDigest {
   timezone: string;
   dueCount: number;
   message: string;
+}
+
+export interface QuestionDraft {
+  prompt: string;
+  answer: string;
+  kind: QuestionKind;
+}
+
+export interface Features {
+  /** Whether this server can generate questions (it needs Anthropic API credentials). */
+  questionGeneration: boolean;
 }
 
 export interface ApiErrorBody {

@@ -1,5 +1,6 @@
 import type { Question } from '../../shared/api.js';
 import type { Rating } from '../../shared/scheduler.js';
+import type { QuestionKind, QuestionSource } from '../../shared/validation.js';
 import type { Database } from '../db/connection.js';
 
 interface QuestionRow {
@@ -7,6 +8,8 @@ interface QuestionRow {
   topic_id: number;
   prompt: string;
   answer: string;
+  source: QuestionSource;
+  kind: QuestionKind | null;
   created_at: string;
   updated_at: string;
 }
@@ -16,6 +19,8 @@ const toQuestion = (r: QuestionRow): Question => ({
   topicId: r.topic_id,
   prompt: r.prompt,
   answer: r.answer,
+  source: r.source,
+  kind: r.kind,
   createdAt: r.created_at,
   updatedAt: r.updated_at,
 });
@@ -37,11 +42,22 @@ export function getQuestion(db: Database, userId: number, id: number): Question 
   return row && toQuestion(row);
 }
 
-export function insertQuestion(db: Database, topicId: number, prompt: string, answer: string, now: string): number {
+export interface NewQuestion {
+  prompt: string;
+  answer: string;
+  source?: QuestionSource;
+  kind?: QuestionKind | null;
+}
+
+export function insertQuestion(db: Database, topicId: number, q: NewQuestion, now: string): number {
   const result = db
-    .prepare('INSERT INTO questions (topic_id, prompt, answer, created_at, updated_at) VALUES (?, ?, ?, ?, ?)')
-    .run(topicId, prompt, answer, now, now);
+    .prepare('INSERT INTO questions (topic_id, prompt, answer, source, kind, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+    .run(topicId, q.prompt, q.answer, q.source ?? 'manual', q.kind ?? null, now, now);
   return Number(result.lastInsertRowid);
+}
+
+export function countGeneratedQuestions(db: Database, topicId: number): number {
+  return (db.prepare("SELECT COUNT(*) AS n FROM questions WHERE topic_id = ? AND source = 'generated'").get(topicId) as { n: number }).n;
 }
 
 export function updateQuestion(db: Database, id: number, prompt: string, answer: string, now: string): void {
@@ -56,6 +72,7 @@ export interface QuestionHistory {
   id: number;
   prompt: string;
   answer: string;
+  kind: QuestionKind | null;
   lastRating: Rating | null;
   timesAsked: number;
 }
@@ -64,7 +81,7 @@ export interface QuestionHistory {
 export function listQuestionHistory(db: Database, topicId: number): QuestionHistory[] {
   return db
     .prepare(
-      `SELECT q.id, q.prompt, q.answer,
+      `SELECT q.id, q.prompt, q.answer, q.kind,
          (SELECT ra.rating FROM review_answers ra WHERE ra.question_id = q.id ORDER BY ra.id DESC LIMIT 1) AS lastRating,
          (SELECT COUNT(*) FROM review_answers ra WHERE ra.question_id = q.id) AS timesAsked
        FROM questions q WHERE q.topic_id = ? ORDER BY q.id`,

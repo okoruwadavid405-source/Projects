@@ -194,7 +194,7 @@ export function loadDemoData(ctx: AppContext, userId: number, timezone: string):
           { courseId, title: topic.title, description: topic.description, understanding: topic.understanding, schedule: state },
           now,
         );
-        const questionIds = topic.questions.map(([q, a]) => insertQuestion(ctx.db, topicId, q, a, now));
+        const questionIds = topic.questions.map(([q, a]) => insertQuestion(ctx.db, topicId, { prompt: q, answer: a }, now));
 
         let lastRating: Rating | null = null;
         for (const [rating, daysLate = 0] of topic.history) {

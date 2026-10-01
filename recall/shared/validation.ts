@@ -51,9 +51,30 @@ export const courseInputSchema = z.object({
   color: z.enum(COURSE_COLORS).default('indigo'),
 });
 
+/** What a question asks the student to do. Generated questions always carry one. */
+export const QUESTION_KINDS = ['recall', 'explain', 'apply', 'compare', 'troubleshoot'] as const;
+export type QuestionKind = (typeof QUESTION_KINDS)[number];
+export const QUESTION_SOURCES = ['manual', 'generated'] as const;
+export type QuestionSource = (typeof QUESTION_SOURCES)[number];
+
+export const QUESTION_PROMPT_MAX = 1000;
+export const QUESTION_ANSWER_MAX = 4000;
+
 export const questionInputSchema = z.object({
-  prompt: trimmed('Question', 1000),
-  answer: trimmed('Answer', 4000),
+  prompt: trimmed('Question', QUESTION_PROMPT_MAX),
+  answer: trimmed('Answer', QUESTION_ANSWER_MAX),
+  source: z.enum(QUESTION_SOURCES).default('manual'),
+  kind: z.enum(QUESTION_KINDS).nullable().default(null),
+});
+
+export const questionDraftRequestSchema = z.object({
+  courseId: z.number().int().positive('Choose a course.'),
+  title: trimmed('Topic', 120),
+  description: optionalText('Description', 2000),
+  notes: optionalText('Notes', 8000),
+  /** When generating more questions for an existing topic. */
+  topicId: z.number().int().positive().optional(),
+  count: z.number().int().min(1).max(8).default(5),
 });
 
 export const topicCreateSchema = z.object({
@@ -95,7 +116,8 @@ export const settingsSchema = z.object({
 
 export type RegisterInput = z.infer<typeof registerSchema>;
 export type CourseInput = z.input<typeof courseInputSchema>;
-export type QuestionInput = z.infer<typeof questionInputSchema>;
+export type QuestionInput = z.input<typeof questionInputSchema>;
+export type QuestionDraftRequest = z.input<typeof questionDraftRequestSchema>;
 export type TopicCreateInput = z.input<typeof topicCreateSchema>;
 export type TopicUpdateInput = z.input<typeof topicUpdateSchema>;
 export type ReviewSubmitInput = z.input<typeof reviewSubmitSchema>;

@@ -2,7 +2,9 @@ import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tansta
 import type {
   Course,
   Dashboard,
+  Features,
   Progress,
+  QuestionDraft,
   Question,
   ReminderDigest,
   ReviewResult,
@@ -12,7 +14,7 @@ import type {
   Upcoming,
   User,
 } from '@shared/api';
-import type { CourseInput, QuestionInput, ReviewSubmitInput, SettingsInput, TopicCreateInput, TopicUpdateInput } from '@shared/validation';
+import type { CourseInput, QuestionDraftRequest, QuestionInput, ReviewSubmitInput, SettingsInput, TopicCreateInput, TopicUpdateInput } from '@shared/validation';
 import { api } from './client';
 
 export const keys = {
@@ -25,6 +27,7 @@ export const keys = {
   queue: ['queue'] as const,
   upcoming: (days: number) => ['upcoming', days] as const,
   progress: ['progress'] as const,
+  features: ['features'] as const,
 };
 
 /** Study data is small and interrelated, so any change simply refreshes everything except the session. */
@@ -50,10 +53,24 @@ export const useCourses = () =>
 export const useCourse = (id: number) =>
   useQuery({ queryKey: keys.course(id), queryFn: () => api.get<{ course: Course; topics: TopicSummary[] }>(`/courses/${id}`) });
 export const useTopic = (id: number) =>
-  useQuery({ queryKey: keys.topic(id), queryFn: () => api.get<{ topic: TopicDetail }>(`/topics/${id}`).then((r) => r.topic) });
+  useQuery({
+    queryKey: keys.topic(id),
+    queryFn: () => api.get<{ topic: TopicDetail }>(`/topics/${id}`).then((r) => r.topic),
+    // Poll while Recall is writing questions in the background, so they appear as soon as they're saved.
+    refetchInterval: (query) => (query.state.data?.generatingQuestions ? 2500 : false),
+  });
 export const useUpcoming = (days: number) =>
   useQuery({ queryKey: keys.upcoming(days), queryFn: () => api.get<Upcoming>(`/upcoming?days=${days}`) });
 export const useProgress = () => useQuery({ queryKey: keys.progress, queryFn: () => api.get<Progress>('/progress') });
+
+export const useFeatures = () =>
+  useQuery({ queryKey: keys.features, queryFn: () => api.get<Features>('/features'), staleTime: Infinity });
+
+/** Asks the server to write questions; nothing is saved until the student keeps them. */
+export const useDraftQuestions = () =>
+  useMutation({
+    mutationFn: (input: QuestionDraftRequest) => api.post<{ drafts: QuestionDraft[] }>('/question-drafts', input).then((r) => r.drafts),
+  });
 
 export const fetchQueue = () => api.get<{ topics: TopicSummary[] }>('/review/queue').then((r) => r.topics);
 export const fetchReviewSession = (topicId: number) => api.get<ReviewSession>(`/topics/${topicId}/review-session`);

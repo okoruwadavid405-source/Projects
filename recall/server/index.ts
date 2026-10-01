@@ -4,6 +4,7 @@ import { createApp } from './app.js';
 import { openDatabase } from './db/connection.js';
 import { systemClock, type AppContext } from './lib/context.js';
 import { deleteExpiredSessions } from './repositories/sessions.js';
+import { createQuestionGenerator } from './services/questionGenerator.js';
 
 const production = process.env.NODE_ENV === 'production';
 const port = Number(process.env.PORT ?? 3001);
@@ -13,6 +14,7 @@ const ctx: AppContext = {
   db: openDatabase(dbPath),
   clock: systemClock,
   secureCookies: production && process.env.INSECURE_COOKIES !== 'true',
+  questionGenerator: createQuestionGenerator(),
 };
 
 deleteExpiredSessions(ctx.db, ctx.clock.now());
@@ -24,6 +26,7 @@ const app = createApp(ctx, { staticDir, trustProxy: process.env.TRUST_PROXY === 
 
 const server = app.listen(port, () => {
   console.log(`[recall] API listening on http://localhost:${port}${production ? '' : ' (dev — UI on http://localhost:5173)'}`);
+  console.log(`[recall] Question generation: ${ctx.questionGenerator ? 'on' : 'off (set ANTHROPIC_API_KEY to enable)'}`);
 });
 
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {

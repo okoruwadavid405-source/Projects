@@ -25,7 +25,8 @@ npm run build        # typecheck + client bundle + compiled server
 npm start            # serves API and UI on http://localhost:3001
 ```
 
-Configuration lives in environment variables (see `.env.example`). There are no secrets to configure.
+Configuration lives in environment variables (see `.env.example`). The only secret is the optional
+`ANTHROPIC_API_KEY` for question generation.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
@@ -34,6 +35,9 @@ Configuration lives in environment variables (see `.env.example`). There are no 
 | `NODE_ENV` | — | `production` serves `dist/client` and sets `Secure` cookies |
 | `TRUST_PROXY` | `false` | Set to `true` behind a reverse proxy (TLS terminator) |
 | `INSECURE_COOKIES` | `false` | Allows production mode over plain HTTP (local testing only) |
+| `ANTHROPIC_API_KEY` | — | Turns on question generation (see below). Server-side only |
+| `QUESTION_GENERATION` | — | `on` to use an `ant auth login` profile instead of a key; `off` to disable |
+| `QUESTION_MODEL` | `claude-opus-5-5` | Claude model used to write questions |
 
 ## Tests
 
@@ -102,6 +106,36 @@ Settings. "Today" is computed on the server with `Intl` for that zone. All date 
 math in `shared/dates.ts`, so month ends, leap years, year changes and DST are handled without string tricks. Tests
 cover midnight in Toronto, Kiritimati's New Year, DST transitions and leap days.
 
+## Generated questions
+
+With Anthropic credentials on the server, Recall writes questions with Claude (`server/services/questionGenerator.ts`,
+model `claude-opus-5-5` by default). Questions keep coming in three ways (`server/services/questionFlow.ts`):
+
+1. **On demand.** **Generate questions** on the Add-topic page, and **Generate more** on a topic, return drafts. The
+   student keeps, edits or discards each one, and nothing is saved until they do. Pasting lecture notes gives better
+   questions; the notes are used for that request only and are never stored.
+2. **Automatically for new topics.** A topic saved without questions gets 5 written in the background. The topic page
+   shows progress and updates when they're ready.
+3. **After every review.** Two fresh questions are added, aimed at whatever the student just rated Forgot or Hard and
+   asked from a different angle. Review sessions favour never-asked questions, so each session brings new material.
+   This stops at 24 generated questions per topic.
+
+The prompt asks for **neutral** questions (no hints, leading wording, yes/no or multiple choice) that **make the
+student think**. At most a quarter are plain recall; the rest ask the student to explain, apply to a concrete example,
+compare, or spot the error in a flawed claim. Each comes with a concise model answer to grade against, and is labelled
+with its kind in the UI. The student's notes are fenced off as study material, never treated as instructions.
+
+How the request is made:
+
+- Structured JSON output is validated with zod. Empty, oversized and duplicate questions are dropped, and nothing is
+  invented to fill gaps.
+- If Claude declines a request on safety grounds, it is retried server-side on a fallback model
+  (`fallbacks: "default"`). A refusal that persists becomes a friendly message.
+- Failures never break a review. On-demand generation is limited to 30 requests per user per hour, since each one is a
+  paid API call.
+- **Without credentials** the feature is off. The UI hides the buttons, the API answers `503` with a clear message, and
+  students write questions by hand as before. Tests use a fake generator, so `npm test` and the E2E run need no key.
+
 ## Data model
 
 `users` · `sessions` · `courses` · `topics` · `questions` · `reviews` · `review_answers`
@@ -124,6 +158,7 @@ cover midnight in Toronto, Kiritimati's New Year, DST transitions and leap days.
 - Rate limiting on login/register, a strict Content-Security-Policy, and other security headers.
 - All SQL uses bound parameters. All input is validated with zod. Errors are converted to friendly messages, and raw
   database errors are only logged on the server.
+- The Anthropic key lives only on the server. Generation requests are checked for course and topic ownership.
 - Authorization: other users' records return 404. Tests attempt every cross-user read and write.
 
 ## Notifications
@@ -142,6 +177,9 @@ cover midnight in Toronto, Kiritimati's New Year, DST transitions and leap days.
 - Single-process deployment: the login rate limiter is in-memory, and SQLite suits one server instance. Moving to
   Postgres means replacing the repository layer only.
 - There is no password reset or email change, since both need an email provider.
-- Questions are text-only (no images or LaTeX rendering), and are written by hand rather than generated.
+- Questions are text-only (no images or LaTeX rendering).
+- Generated questions depend on Claude knowing the subject. Students should check answers against their course
+  material, and the UI tells them to. Automatic generation adds API cost per review (two questions); set
+  `QUESTION_GENERATION=off` to disable it.
 - The Upcoming page shows each topic's *next* review. Later dates depend on future ratings, so they aren't plotted.
 - `node:sqlite` still prints an "experimental" warning on Node 22. The npm scripts suppress it.

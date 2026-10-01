@@ -1,5 +1,6 @@
 import { diffDays, parseLocalDate, type LocalDate } from '@shared/dates';
 import type { Rating, TopicDisplayStatus } from '@shared/scheduler';
+import type { QuestionKind } from '@shared/validation';
 
 const dateFmt = (opts: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat(undefined, { timeZone: 'UTC', ...opts });
 const toUtcDate = (d: LocalDate | string) => {
@@ -56,6 +57,14 @@ export const RATING_META: Record<Rating, { label: string; description: string }>
   hard: { label: 'Hard', description: 'I remembered it, but it was difficult.' },
   good: { label: 'Good', description: 'I remembered it correctly.' },
   easy: { label: 'Easy', description: 'I remembered it immediately.' },
+};
+
+export const KIND_LABEL: Record<QuestionKind, string> = {
+  recall: 'Recall',
+  explain: 'Explain',
+  apply: 'Apply it',
+  compare: 'Compare',
+  troubleshoot: 'Spot the error',
 };
 
 export const UNDERSTANDING_LABELS = ['Lost', 'Shaky', 'Okay', 'Good', 'Solid'] as const;

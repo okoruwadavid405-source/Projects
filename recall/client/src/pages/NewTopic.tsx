@@ -3,11 +3,14 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { CalendarCheck, ChevronRight, Plus, Trash2 } from 'lucide-react';
 import { compareDates, isLocalDate } from '@shared/dates';
 import { initialSchedule, projectSchedule } from '@shared/scheduler';
-import { topicCreateSchema } from '@shared/validation';
+import type { QuestionDraft } from '@shared/api';
+import { topicCreateSchema, type QuestionKind, type QuestionSource } from '@shared/validation';
 import { errorMessage, fieldErrors } from '../api/client';
-import { useCourses, useCreateTopic } from '../api/hooks';
+import { useCourses, useCreateTopic, useFeatures } from '../api/hooks';
 import { useToday } from '../auth/AuthContext';
+import { GeneratedBadge } from '../components/Badges';
 import { CourseFormModal } from '../components/CourseForm';
+import { GenerateQuestions } from '../components/GenerateQuestions';
 import { Field, FormError } from '../components/Field';
 import { ErrorState, PageSkeleton } from '../components/States';
 import { useToast } from '../components/Toast';
@@ -17,10 +20,13 @@ interface Draft {
   key: number;
   prompt: string;
   answer: string;
+  source: QuestionSource;
+  kind: QuestionKind | null;
 }
 
 let draftKey = 1;
-const blankDraft = (): Draft => ({ key: draftKey++, prompt: '', answer: '' });
+const blankDraft = (): Draft => ({ key: draftKey++, prompt: '', answer: '', source: 'manual', kind: null });
+const isBlank = (d: Draft) => !d.prompt.trim() && !d.answer.trim();
 
 export function NewTopicPage() {
   const today = useToday();
@@ -29,6 +35,7 @@ export function NewTopicPage() {
   const [params] = useSearchParams();
   const courses = useCourses();
   const create = useCreateTopic();
+  const canGenerate = useFeatures().data?.questionGeneration ?? false;
 
   const [courseId, setCourseId] = useState<number | ''>(Number(params.get('courseId')) || '');
   const [title, setTitle] = useState('');
@@ -52,6 +59,15 @@ export function NewTopicPage() {
 
   const updateDraft = (key: number, patch: Partial<Draft>) => setDrafts((ds) => ds.map((d) => (d.key === key ? { ...d, ...patch } : d)));
 
+  // Generated questions replace empty rows and are appended after anything the student wrote.
+  const addGenerated = (generated: QuestionDraft[]) => {
+    setDrafts((ds) => [
+      ...ds.filter((d) => !isBlank(d)),
+      ...generated.map((g) => ({ key: draftKey++, prompt: g.prompt, answer: g.answer, source: 'generated' as const, kind: g.kind })),
+    ]);
+    toast(`${generated.length} questions added — edit or remove any before saving`);
+  };
+
   async function submit(e: FormEvent) {
     e.preventDefault();
     setFormError(null);
@@ -63,7 +79,7 @@ export function NewTopicPage() {
       description,
       learnedOn,
       understanding,
-      questions: filled.map(({ prompt, answer }) => ({ prompt, answer })),
+      questions: filled.map(({ prompt, answer, source, kind }) => ({ prompt, answer, source, kind })),
     };
     const parsed = topicCreateSchema.safeParse(input);
     const errs: Record<string, string> = {};
@@ -159,13 +175,22 @@ export function NewTopicPage() {
           <div className="spread">
             <div>
               <h2 id="questions-section">Questions</h2>
-              <p className="subtle">Recall quizzes you with these. Short, specific questions work best.</p>
+              <p className="subtle">
+                Recall quizzes you with these.{' '}
+                {canGenerate
+                  ? 'Write your own, generate some, or leave this empty and Recall will write them after you save.'
+                  : 'Short, specific questions work best.'}
+              </p>
             </div>
           </div>
+          <GenerateQuestions courseId={effectiveCourseId} title={title} description={description} onDrafts={addGenerated} />
           {drafts.map((d, i) => (
             <div key={d.key} className="question-draft">
               <div className="spread">
-                <strong>Question {i + 1}</strong>
+                <span className="row" style={{ gap: 8 }}>
+                  <strong>Question {i + 1}</strong>
+                  {d.source === 'generated' && <GeneratedBadge kind={d.kind} />}
+                </span>
                 {drafts.length > 1 && (
                   <button
                     type="button"
@@ -178,8 +203,10 @@ export function NewTopicPage() {
                 )}
               </div>
               <Field label="Question" error={errors[`q-${d.key}-prompt`]}>
-                <input
-                  className="input"
+                <textarea
+                  className="textarea"
+                  rows={2}
+                  style={{ minHeight: 0 }}
                   value={d.prompt}
                   onChange={(e) => updateDraft(d.key, { prompt: e.target.value })}
                   placeholder="What is the difference between a subset and a proper subset?"

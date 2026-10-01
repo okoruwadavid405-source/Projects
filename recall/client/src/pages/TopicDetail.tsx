@@ -1,13 +1,14 @@
 import { useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { CalendarCheck, ChevronRight, History, MessageSquarePlus, Pencil, Play, Plus, Trash2 } from 'lucide-react';
-import type { Question, TopicDetail } from '@shared/api';
+import { CalendarCheck, Check, ChevronRight, History, MessageSquarePlus, Pencil, Play, Plus, Trash2, X } from 'lucide-react';
+import type { Question, QuestionDraft, TopicDetail } from '@shared/api';
 import { compareDates, isLocalDate } from '@shared/dates';
 import { questionInputSchema, topicUpdateSchema } from '@shared/validation';
 import { ApiError, errorMessage, fieldErrors } from '../api/client';
-import { useAddQuestion, useCourses, useDeleteQuestion, useDeleteTopic, useTopic, useUpdateQuestion, useUpdateTopic } from '../api/hooks';
+import { useAddQuestion, useCourses, useFeatures, useDeleteQuestion, useDeleteTopic, useTopic, useUpdateQuestion, useUpdateTopic } from '../api/hooks';
 import { useToday } from '../auth/AuthContext';
-import { CourseTag, RatingBadge, StatusBadge } from '../components/Badges';
+import { CourseTag, GeneratedBadge, RatingBadge, StatusBadge } from '../components/Badges';
+import { GenerateQuestions } from '../components/GenerateQuestions';
 import { Field, FormError } from '../components/Field';
 import { ConfirmDialog, Modal } from '../components/Modal';
 import { EmptyState, ErrorState, PageSkeleton } from '../components/States';
@@ -150,9 +151,28 @@ export function TopicDetailPage() {
 
 function Questions({ topic }: { topic: TopicDetail }) {
   const [adding, setAdding] = useState(false);
+  const [pending, setPending] = useState<(QuestionDraft & { key: number })[]>([]);
+  const canGenerate = useFeatures().data?.questionGeneration ?? false;
+  const add = useAddQuestion();
+  const toast = useToast();
+
+  const keep = async (drafts: (QuestionDraft & { key: number })[]) => {
+    for (const d of drafts) {
+      try {
+        await add.mutateAsync({ topicId: topic.id, prompt: d.prompt, answer: d.answer, kind: d.kind, source: 'generated' });
+        setPending((ps) => ps.filter((p) => p.key !== d.key));
+      } catch (err) {
+        toast(errorMessage(err), 'error');
+        return;
+      }
+    }
+    toast(drafts.length === 1 ? 'Question added' : `${drafts.length} questions added`);
+  };
+
+  const empty = topic.questions.length === 0 && !adding && pending.length === 0;
   return (
-    <section className="card" aria-labelledby="questions-title">
-      <div className="card-header">
+    <section className="card stack" aria-labelledby="questions-title">
+      <div className="card-header" style={{ marginBottom: 0 }}>
         <h2 id="questions-title">Questions</h2>
         {topic.questions.length > 0 && !adding && (
           <button type="button" className="btn btn-secondary btn-sm" onClick={() => setAdding(true)}>
@@ -160,7 +180,17 @@ function Questions({ topic }: { topic: TopicDetail }) {
           </button>
         )}
       </div>
-      {topic.questions.length === 0 && !adding ? (
+
+      {topic.generatingQuestions && (
+        <p className="generating-note" role="status">
+          <span className="spinner" aria-hidden /> Recall is writing new questions for this topic…
+        </p>
+      )}
+      {canGenerate && topic.questions.length > 0 && (
+        <p className="subtle">After each review, Recall adds fresh questions that come at what you missed from a new angle.</p>
+      )}
+
+      {empty && !topic.generatingQuestions ? (
         <EmptyState
           icon={<MessageSquarePlus size={26} />}
           title="No questions yet"
@@ -180,9 +210,55 @@ function Questions({ topic }: { topic: TopicDetail }) {
         </ul>
       )}
       {adding && <QuestionForm topicId={topic.id} onDone={() => setAdding(false)} />}
+
+      {pending.length > 0 && (
+        <div className="stack" aria-labelledby="drafts-title">
+          <div className="spread">
+            <h3 id="drafts-title">Suggested questions</h3>
+            <div className="row">
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => setPending([])}>
+                Discard all
+              </button>
+              <button type="button" className="btn btn-primary btn-sm" onClick={() => void keep(pending)} disabled={add.isPending}>
+                <Check size={15} aria-hidden /> Keep all
+              </button>
+            </div>
+          </div>
+          <ul>
+            {pending.map((d) => (
+              <li key={d.key} className="question-item question-suggestion">
+                <div className="qa">
+                  <GeneratedBadge kind={d.kind} />
+                  <span className="q">{d.prompt}</span>
+                  <span className="a">{d.answer}</span>
+                </div>
+                <div className="row" style={{ flexWrap: 'nowrap', alignItems: 'flex-start' }}>
+                  <button type="button" className="icon-btn" onClick={() => void keep([d])} disabled={add.isPending} aria-label={`Keep question: ${d.prompt}`}>
+                    <Check size={17} aria-hidden />
+                  </button>
+                  <button type="button" className="icon-btn" onClick={() => setPending((ps) => ps.filter((p) => p.key !== d.key))} aria-label={`Discard question: ${d.prompt}`}>
+                    <X size={17} aria-hidden />
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <GenerateQuestions
+        courseId={topic.courseId}
+        title={topic.title}
+        description={topic.description ?? ''}
+        topicId={topic.id}
+        label={topic.questions.length > 0 ? 'Generate more' : 'Generate questions'}
+        onDrafts={(drafts) => setPending((ps) => [...ps, ...drafts.map((d) => ({ ...d, key: suggestionKey++ }))])}
+      />
     </section>
   );
 }
+
+let suggestionKey = 1;
 
 function QuestionRow({ question }: { question: Question }) {
   const [editing, setEditing] = useState(false);
@@ -200,6 +276,7 @@ function QuestionRow({ question }: { question: Question }) {
   return (
     <li className="question-item">
       <div className="qa">
+        {question.source === 'generated' && <GeneratedBadge kind={question.kind} />}
         <span className="q">{question.prompt}</span>
         <span className="a">{question.answer}</span>
       </div>

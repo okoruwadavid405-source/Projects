@@ -11,6 +11,7 @@ import { courseExists } from '../repositories/courses.js';
 import * as questions from '../repositories/questions.js';
 import { listTopicReviews } from '../repositories/reviews.js';
 import * as repo from '../repositories/topics.js';
+import { fillNewTopic, isGenerating } from './questionFlow.js';
 
 type TopicCreate = z.output<typeof topicCreateSchema>;
 type TopicUpdate = z.output<typeof topicUpdateSchema>;
@@ -57,6 +58,7 @@ export function getTopicDetail(ctx: AppContext, userId: number, timezone: string
     reviews: listTopicReviews(ctx.db, userId, id),
     // Review dates if every upcoming review goes well; an overdue topic is projected from today.
     projected: projectSchedule({ ...state, nextReviewOn: maxDate(state.nextReviewOn, today) }, 5),
+    generatingQuestions: isGenerating(ctx, id),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -81,9 +83,10 @@ export function createTopic(ctx: AppContext, userId: number, timezone: string, i
         },
         now,
       );
-      for (const q of input.questions) questions.insertQuestion(ctx.db, topicId, q.prompt, q.answer, now);
+      for (const q of input.questions) questions.insertQuestion(ctx.db, topicId, q, now);
       return topicId;
     });
+    if (input.questions.length === 0) fillNewTopic(ctx, userId, id);
     return getTopicDetail(ctx, userId, timezone, id);
   } catch (err) {
     if (isUniqueViolation(err)) throw duplicate(input.title);
@@ -131,7 +134,7 @@ export function deleteTopic(ctx: AppContext, userId: number, id: number): void {
 
 export function addQuestion(ctx: AppContext, userId: number, topicId: number, input: QuestionFields): Question {
   requireTopic(ctx, userId, topicId);
-  const id = questions.insertQuestion(ctx.db, topicId, input.prompt, input.answer, nowIso(ctx));
+  const id = questions.insertQuestion(ctx.db, topicId, input, nowIso(ctx));
   return questions.getQuestion(ctx.db, userId, id)!;
 }
 

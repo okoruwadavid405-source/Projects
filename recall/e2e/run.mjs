@@ -25,7 +25,7 @@ let tmp;
 
 async function startServer() {
   tmp = mkdtempSync(join(tmpdir(), 'recall-e2e-'));
-  server = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', 'dist/server/server/index.js'], {
+  server = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', 'e2e/server.mjs'], {
     cwd: root,
     env: { ...process.env, NODE_ENV: 'production', PORT: String(port), DATABASE_PATH: join(tmp, 'e2e.db'), INSECURE_COOKIES: 'true' },
     stdio: ['ignore', 'pipe', 'inherit'],
@@ -194,6 +194,43 @@ async function desktopFlow(browser) {
   await page.getByRole('dialog').getByRole('button', { name: 'Delete question' }).click();
   await page.locator('.question-item .q', { hasText: 'What is a power set?' }).waitFor({ state: 'detached' });
   log('questions added, edited and deleted');
+
+  // Generated questions: drafts on the form, background fill, "generate more", review badges
+  await page.getByRole('link', { name: 'Add topic' }).first().click();
+  await page.getByLabel('Topic', { exact: true }).fill('Relations');
+  await page.getByRole('button', { name: 'Generate questions' }).click();
+  await page.locator('.question-draft .badge', { hasText: /Apply it|Explain|Compare|Spot the error|Recall/ }).first().waitFor();
+  const generatedCount = await page.locator('.question-draft').count();
+  check(generatedCount === 5, `5 generated drafts replace the blank row (got ${generatedCount})`);
+  await page.getByRole('button', { name: 'Remove question 5' }).click();
+  await shot(page, 'generated-drafts');
+  await page.getByRole('button', { name: 'Save topic' }).click();
+  await page.getByRole('heading', { name: 'Relations' }).waitFor();
+  check((await page.locator('.question-item').count()) === 4, 'the 4 kept drafts are saved');
+  log('questions generated as editable drafts on the form, then saved');
+
+  await page.getByRole('link', { name: 'Add topic' }).first().click();
+  await page.getByLabel('Topic', { exact: true }).fill('Functions');
+  await page.getByRole('button', { name: 'Save topic' }).click();
+  await page.getByText('Recall is writing new questions for this topic').waitFor();
+  await page.locator('.question-item').nth(4).waitFor();
+  await page.getByText('Recall is writing new questions for this topic').waitFor({ state: 'detached' });
+  await shot(page, 'auto-generated');
+  log('a topic saved without questions is filled automatically in the background');
+
+  await page.getByRole('button', { name: 'Generate more' }).click();
+  await page.getByRole('heading', { name: 'Suggested questions' }).waitFor();
+  await page.locator('.question-suggestion').first().getByRole('button', { name: /Discard question/ }).click();
+  await page.getByRole('button', { name: 'Keep all' }).click();
+  await page.getByRole('heading', { name: 'Suggested questions' }).waitFor({ state: 'detached' });
+  check((await page.locator('.question-item').count()) === 9, 'kept suggestions are added (5 + 4)');
+  log('"Generate more" suggestions can be kept or discarded');
+
+  await page.getByRole('link', { name: 'Review early' }).click();
+  await page.locator('.flashcard .badge', { hasText: 'New question' }).waitFor();
+  await shot(page, 'review-generated');
+  await page.goto(`${base}/`);
+  log('review shows the question kind and marks new questions');
 
   // Demo data, upcoming, progress
   await page.getByRole('link', { name: 'Settings' }).first().click();

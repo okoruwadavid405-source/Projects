@@ -9,7 +9,7 @@ import { useToday } from '../auth/AuthContext';
 import { CourseTag, RatingBadge } from '../components/Badges';
 import { FormError } from '../components/Field';
 import { EmptyState, ErrorState, Spinner } from '../components/States';
-import { formatDate, formatInterval, pluralize, RATING_META, relativeDay, uuid } from '../lib/format';
+import { formatDate, formatInterval, KIND_LABEL, pluralize, RATING_META, relativeDay, uuid } from '../lib/format';
 
 type QueueState = { status: 'loading' } | { status: 'error'; error: unknown } | { status: 'ready'; ids: number[] };
 
@@ -155,6 +155,8 @@ function TopicReview({
             id: 0,
             prompt: `Without looking at your notes, explain “${session.topic.title}” in your own words.`,
             answer: session.topic.description || 'This topic has no description yet. Compare your answer with your course notes.',
+            kind: null,
+            isNew: false,
           },
         ]
     : [];
@@ -281,6 +283,8 @@ function TopicReview({
       <div className="eyebrow">
         <CourseTag course={topic.course} />
         <span>{topic.title}</span>
+        {card.kind && <span className="badge badge-new">{KIND_LABEL[card.kind]}</span>}
+        {card.isNew && <span className="badge badge-mastered">New question</span>}
         {cards.length > 1 && (
           <span style={{ marginLeft: 'auto' }}>
             Question {qIndex + 1} of {cards.length}

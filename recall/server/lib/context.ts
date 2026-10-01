@@ -1,4 +1,5 @@
 import type { Database } from '../db/connection.js';
+import type { QuestionGenerator } from '../services/questionGenerator.js';
 
 export interface Clock {
   now(): Date;
@@ -11,4 +12,6 @@ export interface AppContext {
   db: Database;
   clock: Clock;
   secureCookies: boolean;
+  /** Null when the server has no Anthropic credentials — question generation is then unavailable. */
+  questionGenerator: QuestionGenerator | null;
 }

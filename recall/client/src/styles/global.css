@@ -108,7 +108,7 @@ a { color: var(--primary-text); text-decoration: none; }
 a:hover { text-decoration: underline; }
 button, input, select, textarea { font: inherit; color: inherit; }
 img, svg { display: block; }
-ul { margin: 0; padding: 0; list-style: none; }
+ul, ol { margin: 0; padding: 0; list-style: none; }
 
 :focus-visible {
   outline: 3px solid var(--focus);
@@ -615,3 +615,14 @@ kbd {
   .hero .big { font-size: 2.1rem; }
   .hero .btn-hero { width: 100%; }
 }
+
+/* ---------- Question generation ---------- */
+.generate-box {
+  display: flex; flex-direction: column; gap: 10px; align-items: flex-start;
+  padding: 14px; border-radius: var(--radius); border: 1px dashed var(--border-strong);
+  background: color-mix(in srgb, var(--primary-soft) 45%, var(--surface));
+}
+.generate-box > .spread { width: 100%; }
+.generating-note { display: flex; align-items: center; gap: 10px; color: var(--primary-text); font-weight: 600; font-size: 0.92rem; }
+.question-suggestion { background: color-mix(in srgb, var(--primary-soft) 40%, transparent); border-radius: var(--radius-sm); padding: 12px; border-top: none; margin-top: 8px; }
+.question-item .qa .badge { align-self: flex-start; }

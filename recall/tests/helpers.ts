@@ -3,6 +3,7 @@ import type { Server } from 'node:http';
 import { createApp } from '../server/app.js';
 import { openDatabase } from '../server/db/connection.js';
 import type { AppContext } from '../server/lib/context.js';
+import type { QuestionGenerator } from '../server/services/questionGenerator.js';
 
 export interface TestServer {
   ctx: AppContext;
@@ -11,9 +12,9 @@ export interface TestServer {
   close(): Promise<void>;
 }
 
-export async function startServer(nowIso = '2026-10-01T15:00:00Z'): Promise<TestServer> {
+export async function startServer(nowIso = '2026-10-01T15:00:00Z', questionGenerator: QuestionGenerator | null = null): Promise<TestServer> {
   let now = new Date(nowIso);
-  const ctx: AppContext = { db: openDatabase(':memory:'), clock: { now: () => now }, secureCookies: false };
+  const ctx: AppContext = { db: openDatabase(':memory:'), clock: { now: () => now }, secureCookies: false, questionGenerator };
   const server: Server = await new Promise((resolve) => {
     const s = createApp(ctx).listen(0, () => resolve(s));
   });

@@ -9,11 +9,12 @@ import { nowIso, todayFor } from '../lib/time.js';
 import { listQuestionHistory, type QuestionHistory } from '../repositories/questions.js';
 import { findReviewByClientId, insertReview } from '../repositories/reviews.js';
 import * as topics from '../repositories/topics.js';
+import { topUpAfterReview } from './questionFlow.js';
 import { requireTopic } from './topics.js';
 
 type ReviewSubmit = z.output<typeof reviewSubmitSchema>;
 
-export const QUESTIONS_PER_REVIEW = 3;
+export const QUESTIONS_PER_SESSION = 3;
 
 /**
  * Pick up to `count` questions at random, weighted toward questions that were
@@ -29,13 +30,13 @@ export function selectQuestions(history: QuestionHistory[], count: number, rando
     .map((q) => ({ q, key: Math.pow(random() || Number.EPSILON, 1 / weight(q)) }))
     .sort((a, b) => b.key - a.key)
     .slice(0, count)
-    .map(({ q }) => ({ id: q.id, prompt: q.prompt, answer: q.answer }));
+    .map(({ q }) => ({ id: q.id, prompt: q.prompt, answer: q.answer, kind: q.kind, isNew: q.timesAsked === 0 }));
 }
 
 export function getReviewSession(ctx: AppContext, userId: number, timezone: string, topicId: number): ReviewSession {
   const today = todayFor(ctx, timezone);
   const row = requireTopic(ctx, userId, topicId);
-  const picked = selectQuestions(listQuestionHistory(ctx.db, topicId), QUESTIONS_PER_REVIEW);
+  const picked = selectQuestions(listQuestionHistory(ctx.db, topicId), QUESTIONS_PER_SESSION);
   return {
     topic: topics.toTopicSummary(row, today),
     mode: picked.length > 0 ? 'questions' : 'free',
@@ -59,13 +60,13 @@ export function submitReview(
 ): ReviewResult {
   const today = todayFor(ctx, timezone);
 
-  return transaction(ctx.db, () => {
+  const { result, isNew } = transaction(ctx.db, (): { result: ReviewResult; isNew: boolean } => {
     const row = requireTopic(ctx, userId, topicId);
 
     // A retried request (e.g. after a network failure) returns the original result instead of double-counting.
     const existing = findReviewByClientId(ctx.db, userId, topicId, input.clientId);
     if (existing) {
-      return {
+      const replay: ReviewResult = {
         rating: existing.rating,
         previousInterval: existing.previousInterval,
         newInterval: existing.newInterval,
@@ -74,6 +75,7 @@ export function submitReview(
         nextReviewOn: existing.nextReviewOn,
         topic: topics.toTopicSummary(row, today),
       };
+      return { result: replay, isNew: false };
     }
 
     let rating: Rating;
@@ -116,7 +118,7 @@ export function submitReview(
     }
     topics.updateTopicSchedule(ctx.db, userId, topicId, outcome.state, outcome.stage, rating, now);
 
-    return {
+    const recorded: ReviewResult = {
       rating,
       previousInterval: outcome.previousInterval,
       newInterval: outcome.newInterval,
@@ -125,5 +127,9 @@ export function submitReview(
       nextReviewOn: outcome.state.nextReviewOn,
       topic: topics.toTopicSummary(requireTopic(ctx, userId, topicId), today),
     };
+    return { result: recorded, isNew: true };
   });
+  // After the transaction commits (and not for a retried submission): keep fresh questions coming.
+  if (isNew) topUpAfterReview(ctx, userId, topicId, input.answers);
+  return result;
 }

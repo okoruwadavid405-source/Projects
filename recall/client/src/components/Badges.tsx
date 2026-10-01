@@ -1,7 +1,8 @@
-import { AlarmClock, AlertCircle, Award, Repeat, Sparkles, Sprout } from 'lucide-react';
+import { AlarmClock, AlertCircle, Award, Repeat, Sparkles, Sprout, Wand2 } from 'lucide-react';
 import type { CourseRef } from '@shared/api';
 import type { Rating, TopicDisplayStatus } from '@shared/scheduler';
-import { RATING_META, STATUS_LABEL } from '../lib/format';
+import type { QuestionKind } from '@shared/validation';
+import { KIND_LABEL, RATING_META, STATUS_LABEL } from '../lib/format';
 
 const STATUS_ICON = {
   overdue: AlertCircle,
@@ -33,4 +34,14 @@ export function CourseTag({ course }: { course: Pick<CourseRef, 'code' | 'color'
 
 export function DemoBadge() {
   return <span className="badge badge-demo">Demo</span>;
+}
+
+/** Marks questions Recall wrote, with what kind of thinking they ask for. */
+export function GeneratedBadge({ kind }: { kind: QuestionKind | null }) {
+  return (
+    <span className="badge badge-new" title="Written by Recall">
+      <Wand2 aria-hidden />
+      {kind ? KIND_LABEL[kind] : 'Generated'}
+    </span>
+  );
 }
