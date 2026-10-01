@@ -34,7 +34,7 @@ async function setup(generator: QuestionGenerator | null) {
 describe('question generation', () => {
   it('reports availability and refuses cleanly when the server has no credentials', async () => {
     const { c, course } = await setup(null);
-    expect((await c.get('/features')).body).toEqual({ questionGeneration: false });
+    expect((await c.get('/features')).body).toMatchObject({ questionGeneration: false, documentAI: false, webSearch: false });
     const res = await c.post('/question-drafts', { courseId: course.id, title: 'Sets' });
     expect(res.status).toBe(503);
     expect(res.body.error.message).toMatch(/isn't set up/);
@@ -46,7 +46,7 @@ describe('question generation', () => {
   it('returns editable drafts without saving them, avoiding existing questions', async () => {
     const gen = new FakeGenerator();
     const { c, course } = await setup(gen);
-    expect((await c.get('/features')).body).toEqual({ questionGeneration: true });
+    expect((await c.get('/features')).body).toMatchObject({ questionGeneration: true });
 
     const drafts = await c.post('/question-drafts', { courseId: course.id, title: 'Sets', description: 'Unions', notes: 'my notes', count: 3 });
     expect(drafts.status).toBe(200);

@@ -1,7 +1,7 @@
 /** Response shapes shared by the API and the client. */
 import type { LocalDate } from './dates.js';
 import type { Rating, TopicDisplayStatus, TopicStage } from './scheduler.js';
-import type { CourseColor, QuestionKind, QuestionSource } from './validation.js';
+import type { CourseColor, QuestionDifficulty, QuestionKind, QuestionSource } from './validation.js';
 
 export interface User {
   id: number;
@@ -50,6 +50,10 @@ export interface TopicSummary {
   lastRating: Rating | null;
   lastReviewedOn: LocalDate | null;
   questionCount: number;
+  /** Links this study topic to a course-knowledge topic (see shared/knowledge.ts topicKey). */
+  knowledgeKey: string | null;
+  /** The student marked this topic as a priority. */
+  pinned: boolean;
   course: CourseRef;
 }
 
@@ -60,6 +64,7 @@ export interface Question {
   answer: string;
   source: QuestionSource;
   kind: QuestionKind | null;
+  difficulty: QuestionDifficulty | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -185,11 +190,20 @@ export interface QuestionDraft {
   prompt: string;
   answer: string;
   kind: QuestionKind;
+  difficulty?: QuestionDifficulty | null;
 }
 
 export interface Features {
   /** Whether this server can generate questions (it needs Anthropic API credentials). */
   questionGeneration: boolean;
+  /** Reading scanned PDFs/images and AI extraction of course documents. */
+  documentAI: boolean;
+  /** Course-aware study assistant. */
+  assistant: boolean;
+  /** AI topic suggestions. */
+  suggestions: boolean;
+  /** Public web resource search and page import. */
+  webSearch: boolean;
 }
 
 export interface ApiErrorBody {

@@ -18,6 +18,8 @@ export interface TopicRow {
   next_review_at: string;
   last_reviewed_on: string | null;
   last_rating: Rating | null;
+  knowledge_key: string | null;
+  pinned: number;
   review_count: number;
   lapse_count: number;
   created_at: string;
@@ -53,6 +55,8 @@ export function toTopicSummary(r: TopicRow, today: LocalDate): TopicSummary {
     lastRating: r.last_rating,
     lastReviewedOn: r.last_reviewed_on ? parseLocalDate(r.last_reviewed_on) : null,
     questionCount: r.question_count,
+    knowledgeKey: r.knowledge_key,
+    pinned: r.pinned === 1,
     course: { id: r.course_id, code: r.course_code, name: r.course_name, color: r.course_color },
   };
 }
@@ -98,17 +102,18 @@ export function getTopicRow(db: Database, userId: number, id: number): TopicRow 
 export function insertTopic(
   db: Database,
   userId: number,
-  t: { courseId: number; title: string; description: string | null; understanding: number; schedule: ScheduleState },
+  t: { courseId: number; title: string; description: string | null; understanding: number; schedule: ScheduleState; knowledgeKey?: string | null },
   now: string,
 ): number {
   const result = db
     .prepare(
-      `INSERT INTO topics (user_id, course_id, title, description, learned_on, understanding, status, ease,
+      `INSERT INTO topics (user_id, knowledge_key, course_id, title, description, learned_on, understanding, status, ease,
          current_interval, next_review_at, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, 'new', ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'new', ?, ?, ?, ?, ?)`,
     )
     .run(
       userId,
+      t.knowledgeKey ?? null,
       t.courseId,
       t.title,
       t.description,
@@ -150,6 +155,10 @@ export function updateTopicSchedule(
        last_rating = ?, review_count = ?, lapse_count = ?, updated_at = ?
      WHERE id = ? AND user_id = ?`,
   ).run(stage, s.ease, s.interval, s.nextReviewOn, s.lastReviewedOn, lastRating, s.reviewCount, s.lapseCount, now, id, userId);
+}
+
+export function setTopicPinned(db: Database, userId: number, id: number, pinned: boolean, now: string): void {
+  db.prepare('UPDATE topics SET pinned = ?, updated_at = ? WHERE id = ? AND user_id = ?').run(pinned ? 1 : 0, now, id, userId);
 }
 
 export function deleteTopic(db: Database, userId: number, id: number): boolean {

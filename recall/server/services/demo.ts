@@ -6,6 +6,8 @@
  */
 import { randomUUID } from 'node:crypto';
 import { addDays, compareDates, type LocalDate } from '../../shared/dates.js';
+import { termForDate, termLabel, topicKey } from '../../shared/knowledge.js';
+import * as knowledge from '../knowledge/repository.js';
 import { applyReview, initialSchedule, stageFor, type Rating } from '../../shared/scheduler.js';
 import type { CourseColor } from '../../shared/validation.js';
 import { transaction } from '../db/connection.js';
@@ -184,6 +186,8 @@ export function loadDemoData(ctx: AppContext, userId: number, timezone: string):
         true,
       );
 
+      if (course.code === 'COMP 1805') addDemoCourseKnowledge(ctx, userId, courseId, today, now);
+
       for (const topic of course.topics) {
         const learnedOn = addDays(today, -topic.learnedDaysAgo);
         // Seed with the learned day as "today" so the first review is learnedOn + 1, as it would have been.
@@ -230,6 +234,80 @@ export function loadDemoData(ctx: AppContext, userId: number, timezone: string):
   });
 }
 
+/**
+ * Links the demo COMP 1805 course to the Carleton catalog entry with two private,
+ * clearly-labelled sample sources: a "current" syllabus and a past-term outline,
+ * so the course profile can show confirmed vs. historical topics.
+ */
+function addDemoCourseKnowledge(ctx: AppContext, userId: number, recallCourseId: number, today: LocalDate, now: string) {
+  const catalog = knowledge.searchCourses(ctx.db, 'COMP 1805').find((c) => c.university.name === 'Carleton University' && c.code === 'COMP 1805');
+  if (!catalog) return;
+  const term = termForDate(today);
+  const past = { term: term.term, year: term.year - 1 };
+  const versionId = knowledge.findOrCreateVersion(ctx.db, catalog.id, term, now);
+  if (knowledge.findStudentCourseByVersion(ctx.db, userId, versionId)) return; // already linked to a real course
+  const pastVersionId = knowledge.findOrCreateVersion(ctx.db, catalog.id, past, now);
+  knowledge.insertStudentCourse(ctx.db, userId, catalog.id, versionId, recallCourseId, now);
+
+  const outline = knowledge.insertSource(
+    ctx.db,
+    {
+      courseId: catalog.id,
+      versionId: pastVersionId,
+      origin: 'official',
+      documentType: 'course_outline',
+      title: `Sample ${termLabel(past)} course outline (demo data — not a real Carleton document)`,
+      visibility: 'private',
+      ownerUserId: userId,
+      isDemo: true,
+      instructor: 'Dr. Past Instructor (demo)',
+    },
+    now,
+  );
+  knowledge.insertTopics(
+    ctx.db,
+    outline,
+    ['Logic', 'Set Theory', 'Functions', 'Relations', 'Mathematical Induction', 'Counting', 'Graph Theory'].map((name) => ({ name, topicKey: topicKey(name) })),
+    topicKey,
+  );
+
+  const syllabus = knowledge.insertSource(
+    ctx.db,
+    {
+      courseId: catalog.id,
+      versionId,
+      origin: 'student',
+      documentType: 'syllabus',
+      title: `Sample ${termLabel(term)} syllabus (demo data)`,
+      visibility: 'private',
+      ownerUserId: userId,
+      isDemo: true,
+      instructor: 'Dr. Demo Instructor',
+    },
+    now,
+  );
+  const weekly: [string, number, string[]][] = [
+    ['Logic', -28, ['propositions', 'truth tables', 'logical equivalence']],
+    ['Sets', -21, ['set notation', 'union', 'intersection', 'power sets']],
+    ['Functions', -14, ['injective', 'surjective', 'bijective']],
+    ['Relations', -7, ['equivalence relations', 'partial orders']],
+    ['Proofs', 7, ['direct proof', 'contradiction', 'contrapositive']],
+    ['Counting', 14, ['permutations', 'combinations']],
+  ];
+  knowledge.insertTopics(
+    ctx.db,
+    syllabus,
+    weekly.map(([name, offset, subtopics], i) => ({ name, topicKey: topicKey(name), week: i + 1, scheduledOn: addDays(today, offset), subtopics })),
+    topicKey,
+  );
+  knowledge.insertAssessments(ctx.db, syllabus, [
+    { name: 'Midterm Exam', kind: 'midterm', date: addDays(today, 12), weight: 25, topics: ['Logic', 'Sets', 'Functions'] },
+  ]);
+}
+
 export function removeDemoData(ctx: AppContext, userId: number): number {
-  return deleteDemoCourses(ctx.db, userId);
+  return transaction(ctx.db, () => {
+    ctx.db.prepare('DELETE FROM sources WHERE owner_user_id = ? AND is_demo = 1').run(userId);
+    return deleteDemoCourses(ctx.db, userId);
+  });
 }

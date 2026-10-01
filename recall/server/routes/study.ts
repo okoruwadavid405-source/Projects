@@ -96,7 +96,13 @@ export function studyRoutes(ctx: AppContext): Router {
     res.json({ drafts });
   });
   router.get('/features', (_req, res) => {
-    res.json({ questionGeneration: ctx.questionGenerator !== null });
+    res.json({
+      questionGeneration: ctx.questionGenerator !== null,
+      documentAI: ctx.knowledge.ai !== null,
+      assistant: ctx.knowledge.ai !== null,
+      suggestions: ctx.knowledge.ai !== null,
+      webSearch: ctx.knowledge.web !== null,
+    });
   });
 
   // Reviews

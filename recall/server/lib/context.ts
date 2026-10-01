@@ -1,4 +1,5 @@
 import type { Database } from '../db/connection.js';
+import type { KnowledgeProviders } from '../knowledge/providers.js';
 import type { QuestionGenerator } from '../services/questionGenerator.js';
 
 export interface Clock {
@@ -14,4 +15,6 @@ export interface AppContext {
   secureCookies: boolean;
   /** Null when the server has no Anthropic credentials — question generation is then unavailable. */
   questionGenerator: QuestionGenerator | null;
+  /** AI, web search and embedding adapters for the course knowledge system (each null when not configured). */
+  knowledge: KnowledgeProviders;
 }

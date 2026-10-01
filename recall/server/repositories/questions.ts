@@ -1,6 +1,6 @@
 import type { Question } from '../../shared/api.js';
 import type { Rating } from '../../shared/scheduler.js';
-import type { QuestionKind, QuestionSource } from '../../shared/validation.js';
+import type { QuestionDifficulty, QuestionKind, QuestionSource } from '../../shared/validation.js';
 import type { Database } from '../db/connection.js';
 
 interface QuestionRow {
@@ -10,6 +10,7 @@ interface QuestionRow {
   answer: string;
   source: QuestionSource;
   kind: QuestionKind | null;
+  difficulty: QuestionDifficulty | null;
   created_at: string;
   updated_at: string;
 }
@@ -21,6 +22,7 @@ const toQuestion = (r: QuestionRow): Question => ({
   answer: r.answer,
   source: r.source,
   kind: r.kind,
+  difficulty: r.difficulty,
   createdAt: r.created_at,
   updatedAt: r.updated_at,
 });
@@ -47,12 +49,17 @@ export interface NewQuestion {
   answer: string;
   source?: QuestionSource;
   kind?: QuestionKind | null;
+  difficulty?: QuestionDifficulty | null;
+  groundingSourceId?: number | null;
 }
 
 export function insertQuestion(db: Database, topicId: number, q: NewQuestion, now: string): number {
   const result = db
-    .prepare('INSERT INTO questions (topic_id, prompt, answer, source, kind, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
-    .run(topicId, q.prompt, q.answer, q.source ?? 'manual', q.kind ?? null, now, now);
+    .prepare(
+      `INSERT INTO questions (topic_id, prompt, answer, source, kind, difficulty, grounding_source_id, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(topicId, q.prompt, q.answer, q.source ?? 'manual', q.kind ?? null, q.difficulty ?? null, q.groundingSourceId ?? null, now, now);
   return Number(result.lastInsertRowid);
 }
 

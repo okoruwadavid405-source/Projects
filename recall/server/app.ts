@@ -6,6 +6,7 @@ import { loadSession, requireAuth } from './middleware/auth.js';
 import { errorHandler, notFoundHandler } from './middleware/errors.js';
 import { csrfProtection, securityHeaders } from './middleware/security.js';
 import { authRoutes } from './routes/auth.js';
+import { knowledgeRoutes } from './routes/knowledge.js';
 import { studyRoutes } from './routes/study.js';
 
 export function createApp(ctx: AppContext, opts: { staticDir?: string; trustProxy?: boolean } = {}) {
@@ -26,6 +27,7 @@ export function createApp(ctx: AppContext, opts: { staticDir?: string; trustProx
   api.get('/health', (_req, res) => res.json({ ok: true }));
   api.use('/auth', authRoutes(ctx));
   api.use(requireAuth, studyRoutes(ctx));
+  api.use(requireAuth, knowledgeRoutes(ctx));
   api.use(notFoundHandler);
   app.use('/api', api);
 

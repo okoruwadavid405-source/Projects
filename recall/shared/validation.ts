@@ -54,6 +54,8 @@ export const courseInputSchema = z.object({
 /** What a question asks the student to do. Generated questions always carry one. */
 export const QUESTION_KINDS = ['recall', 'explain', 'apply', 'compare', 'troubleshoot'] as const;
 export type QuestionKind = (typeof QUESTION_KINDS)[number];
+export const QUESTION_DIFFICULTIES = ['foundational', 'intermediate', 'challenging'] as const;
+export type QuestionDifficulty = (typeof QUESTION_DIFFICULTIES)[number];
 export const QUESTION_SOURCES = ['manual', 'generated'] as const;
 export type QuestionSource = (typeof QUESTION_SOURCES)[number];
 
@@ -65,6 +67,7 @@ export const questionInputSchema = z.object({
   answer: trimmed('Answer', QUESTION_ANSWER_MAX),
   source: z.enum(QUESTION_SOURCES).default('manual'),
   kind: z.enum(QUESTION_KINDS).nullable().default(null),
+  difficulty: z.enum(QUESTION_DIFFICULTIES).nullable().default(null),
 });
 
 export const questionDraftRequestSchema = z.object({
@@ -87,6 +90,7 @@ export const topicCreateSchema = z.object({
 });
 
 export const topicUpdateSchema = z.object({
+  pinned: z.boolean().optional(),
   courseId: z.number().int().positive().optional(),
   title: trimmed('Topic', 120).optional(),
   description: optionalText('Description', 2000),

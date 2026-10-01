@@ -9,7 +9,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { betaZodOutputFormat } from '@anthropic-ai/sdk/helpers/beta/zod';
 import { z } from 'zod';
 import type { QuestionDraft } from '../../shared/api.js';
-import { QUESTION_ANSWER_MAX, QUESTION_KINDS, QUESTION_PROMPT_MAX } from '../../shared/validation.js';
+import { QUESTION_ANSWER_MAX, QUESTION_DIFFICULTIES, QUESTION_KINDS, QUESTION_PROMPT_MAX } from '../../shared/validation.js';
 
 export interface GenerationRequest {
   course: { code: string; name: string };
@@ -43,6 +43,7 @@ const OutputSchema = z.object({
   questions: z.array(
     z.object({
       kind: z.enum(QUESTION_KINDS),
+      difficulty: z.enum(QUESTION_DIFFICULTIES),
       prompt: z.string(),
       answer: z.string(),
     }),
@@ -57,7 +58,7 @@ Every question must be:
 - Self-contained and unambiguous. One clear task with a single defensible answer, doable from memory in about two minutes. Include every number, set, expression or code snippet the task needs. If a convention matters, choose the standard one and state it.
 - Distinct. Each question tests a different idea or angle, and none repeats or rephrases a question listed as already existing.
 
-Label each question with its kind: "recall" (state a fact or definition), "explain" (why/how), "apply" (work through a concrete example), "compare" (contrast related ideas), or "troubleshoot" (diagnose an error or misconception).
+Label each question with its kind: "recall" (state a fact or definition), "explain" (why/how), "apply" (work through a concrete example), "compare" (contrast related ideas), or "troubleshoot" (diagnose an error or misconception). Also label its difficulty for a student taking this course: "foundational", "intermediate" or "challenging"; aim for a mix that leans foundational/intermediate.
 
 Each answer is a correct, concise model answer the student can grade themselves against: the key result first, then the essential reasoning or steps, in one to five sentences (worked examples may show short steps).
 
@@ -98,7 +99,7 @@ export function sanitizeDrafts(drafts: QuestionDraft[], req: Pick<GenerationRequ
     const key = normalize(prompt);
     if (seen.has(key)) continue;
     seen.add(key);
-    out.push({ prompt, answer, kind: d.kind });
+    out.push({ prompt, answer, kind: d.kind, difficulty: d.difficulty ?? null });
     if (out.length === req.count) break;
   }
   return out;

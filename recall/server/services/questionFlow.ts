@@ -13,10 +13,12 @@ import type { QuestionDraft } from '../../shared/api.js';
 import type { Rating } from '../../shared/scheduler.js';
 import type { questionDraftRequestSchema } from '../../shared/validation.js';
 import type { AppContext } from '../lib/context.js';
-import { AppError, badRequest, tooManyRequests } from '../lib/errors.js';
+import { AppError, badRequest } from '../lib/errors.js';
+import { useQuota } from '../lib/quota.js';
 import { nowIso } from '../lib/time.js';
 import { countGeneratedQuestions, insertQuestion, listQuestions } from '../repositories/questions.js';
 import { getTopicRow } from '../repositories/topics.js';
+import { groundingMaterialFor } from '../knowledge/material.js';
 import { GenerationError, type GenerationRequest } from './questionGenerator.js';
 import { requireTopic } from './topics.js';
 
@@ -33,12 +35,11 @@ const DRAFTS_PER_HOUR = 30;
 
 interface FlowState {
   jobs: Map<number, Promise<void>>;
-  draftCounts: Map<number, { count: number; resetAt: number }>;
 }
 const states = new WeakMap<AppContext, FlowState>();
 function state(ctx: AppContext): FlowState {
   let s = states.get(ctx);
-  if (!s) states.set(ctx, (s = { jobs: new Map(), draftCounts: new Map() }));
+  if (!s) states.set(ctx, (s = { jobs: new Map() }));
   return s;
 }
 
@@ -63,27 +64,19 @@ function courseOf(ctx: AppContext, userId: number, courseId: number) {
   return course;
 }
 
-function checkDraftQuota(ctx: AppContext, userId: number) {
-  const counts = state(ctx).draftCounts;
-  const now = ctx.clock.now().getTime();
-  let entry = counts.get(userId);
-  if (!entry || entry.resetAt <= now) counts.set(userId, (entry = { count: 0, resetAt: now + 3_600_000 }));
-  if (++entry.count > DRAFTS_PER_HOUR) {
-    throw tooManyRequests("You've generated a lot of questions this hour. Please try again a little later.");
-  }
-}
-
 export async function draftQuestions(ctx: AppContext, userId: number, input: DraftRequest): Promise<QuestionDraft[]> {
   const generator = ctx.questionGenerator;
   if (!generator) throw unavailable();
   const course = courseOf(ctx, userId, input.courseId);
-  const existingPrompts = input.topicId !== undefined ? listQuestions(ctx.db, requireTopic(ctx, userId, input.topicId).id).map((q) => q.prompt) : [];
-  checkDraftQuota(ctx, userId);
+  const topic = input.topicId !== undefined ? requireTopic(ctx, userId, input.topicId) : null;
+  const existingPrompts = topic ? listQuestions(ctx.db, topic.id).map((q) => q.prompt) : [];
+  const material = topic ? groundingMaterialFor(ctx, userId, topic) : null;
+  useQuota(ctx, `drafts:${userId}`, DRAFTS_PER_HOUR, "You've generated a lot of questions this hour. Please try again a little later.");
   try {
     return await generator.generate({
       course,
       topic: { title: input.title, description: input.description },
-      notes: input.notes,
+      notes: [input.notes, material?.notes].filter(Boolean).join('\n\n') || null,
       count: input.count,
       existingPrompts,
       focusPrompts: [],
@@ -95,7 +88,7 @@ export async function draftQuestions(ctx: AppContext, userId: number, input: Dra
 }
 
 /** Generate and store questions for a topic in the background. At most one job per topic at a time. */
-function enqueue(ctx: AppContext, userId: number, topicId: number, build: () => GenerationRequest | null) {
+function enqueue(ctx: AppContext, userId: number, topicId: number, build: () => (GenerationRequest & { groundingSourceId?: number | null }) | null) {
   const generator = ctx.questionGenerator;
   const jobs = state(ctx).jobs;
   if (!generator || jobs.has(topicId)) return;
@@ -109,7 +102,12 @@ function enqueue(ctx: AppContext, userId: number, topicId: number, build: () => 
     const room = MAX_GENERATED_PER_TOPIC - countGeneratedQuestions(ctx.db, topicId);
     const now = nowIso(ctx);
     for (const d of drafts.slice(0, Math.max(0, room))) {
-      insertQuestion(ctx.db, topicId, { prompt: d.prompt, answer: d.answer, kind: d.kind, source: 'generated' }, now);
+      insertQuestion(
+        ctx.db,
+        topicId,
+        { prompt: d.prompt, answer: d.answer, kind: d.kind, difficulty: d.difficulty ?? null, source: 'generated', groundingSourceId: request.groundingSourceId ?? null },
+        now,
+      );
     }
   })()
     .catch((err) => {
@@ -123,10 +121,14 @@ function enqueue(ctx: AppContext, userId: number, topicId: number, build: () => 
 function baseRequest(ctx: AppContext, userId: number, topicId: number) {
   const topic = getTopicRow(ctx.db, userId, topicId);
   if (!topic) return null;
+  // Topics linked to course knowledge are grounded in that course's material.
+  const material = groundingMaterialFor(ctx, userId, topic);
   return {
     course: { code: topic.course_code, name: topic.course_name },
     topic: { title: topic.title, description: topic.description },
     existingPrompts: listQuestions(ctx.db, topicId).map((q) => q.prompt),
+    notes: material?.notes ?? null,
+    groundingSourceId: material?.sourceId ?? null,
   };
 }
 

@@ -16,6 +16,7 @@ import { chromium } from 'playwright';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const shots = join(root, 'e2e', 'screenshots');
+rmSync(shots, { recursive: true, force: true });
 mkdirSync(shots, { recursive: true });
 
 const port = 3200 + Math.floor(Math.random() * 500);
@@ -65,6 +66,39 @@ async function shot(page, name) {
 async function noHorizontalOverflow(page, where) {
   const { sw, cw } = await page.evaluate(() => ({ sw: document.documentElement.scrollWidth, cw: document.documentElement.clientWidth }));
   check(sw <= cw + 1, `${where}: page scrolls horizontally (${sw} > ${cw})`);
+}
+
+/** A syllabus for the current term, with class dates around today. */
+function makeSyllabus() {
+  const now = new Date();
+  const m = now.getMonth() + 1;
+  const term = m <= 4 ? 'Winter' : m <= 8 ? 'Summer' : 'Fall';
+  const label = `${term} ${now.getFullYear()}`;
+  const day = (offset) => {
+    const d = new Date(now);
+    d.setDate(d.getDate() + offset);
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  };
+  const weeks = [
+    ['Logic', -35, 'propositions, truth tables'],
+    ['Predicate Logic', -28, 'quantifiers'],
+    ['Sets', -21, 'set notation, power sets'],
+    ['Functions', -14, 'injective, surjective'],
+    ['Relations', -7, 'equivalence relations, partial orders'],
+    ['Proofs', 7, 'direct proof, contradiction'],
+    ['Counting', 14, 'permutations, combinations'],
+  ];
+  const syllabus = [
+    'COMP 1805: Discrete Structures I',
+    label,
+    'Instructor: Dr. Test Instructor',
+    '',
+    'Weekly Schedule',
+    ...weeks.map(([name, offset, subs], i) => `Week ${i + 1} (${day(offset)}): ${name} - ${subs}`),
+    '',
+    `Midterm Exam (25%) - ${day(10)} - covers Logic, Sets, Functions`,
+  ].join('\n');
+  return { label, syllabus };
 }
 
 function isoDaysAgo(n) {
@@ -232,6 +266,69 @@ async function desktopFlow(browser) {
   await page.goto(`${base}/`);
   log('review shows the question kind and marks new questions');
 
+  // ===== Course knowledge: school → course → term → syllabus → review → confirm → study → ask =====
+  const { label: termName, syllabus } = makeSyllabus();
+  await page.getByRole('link', { name: 'Courses' }).first().click();
+  await page.getByRole('link', { name: 'Add from your school' }).click();
+  await page.getByLabel('Search for your university or college').fill('carleton');
+  await page.getByRole('button', { name: /Carleton University/ }).click();
+  await page.getByRole('button', { name: /School of Computer Science/ }).click();
+  await page.getByLabel('Search by course code or title').fill('1805');
+  await page.getByRole('button', { name: /COMP 1805 — Discrete Structures I/ }).click();
+  await page.getByRole('heading', { name: 'Which semester?' }).waitFor();
+  await shot(page, 'connect-semester');
+  await page.getByRole('button', { name: 'Continue' }).click();
+  await page.getByRole('heading', { name: 'Do you have your syllabus?' }).waitFor();
+  await page.getByLabel('Syllabus file').setInputFiles({ name: 'COMP1805_syllabus.txt', mimeType: 'text/plain', buffer: Buffer.from(syllabus) });
+  await page.getByRole('button', { name: 'Build my course profile' }).click();
+  log('onboarding: school → department → course → semester → syllabus upload');
+
+  const review = page.getByRole('dialog');
+  await review.getByRole('heading', { name: 'Review what Recall found' }).waitFor();
+  await review.getByLabel('Include Predicate Logic').waitFor();
+  check((await review.getByLabel(/^Include /).count()) === 7, 'review lists the 7 extracted topics');
+  await review.getByLabel('Include Predicate Logic').uncheck();
+  await shot(page, 'syllabus-review');
+  await review.getByRole('button', { name: 'Confirm and save' }).click();
+  await review.waitFor({ state: 'hidden' });
+  await page.getByRole('heading', { name: 'Course knowledge profile' }).waitFor();
+  await page.getByRole('heading', { name: 'What am I missing?' }).waitFor();
+  const missingText = await page.locator('section', { has: page.getByRole('heading', { name: 'What am I missing?' }) }).innerText();
+  check(/Graph Theory/.test(missingText) && /Mathematical Induction/.test(missingText) && /not confirmed/.test(missingText), 'historical-only topics listed as unconfirmed');
+  check(!/Predicate Logic/.test(await page.locator('#ktopics-title').locator('..').locator('..').innerText()), 'unticked topic was not saved');
+  await shot(page, 'course-profile');
+  log(`syllabus reviewed and confirmed; ${termName} topics confirmed, past-only topics flagged`);
+
+  // The manually created "Sets" topic (reviewed earlier) is recognised as the student's personal memory.
+  const setsRow = page.locator('.ktopic', { has: page.locator('.name', { hasText: /^Sets$/ }) });
+  await setsRow.getByRole('link', { name: 'Open Sets in your reviews' }).waitFor();
+  log('existing reviews are linked to the matching course topic');
+
+  await page.getByRole('button', { name: 'Start studying Logic' }).first().click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Add to my reviews' }).click();
+  await page.getByRole('heading', { name: 'Logic', exact: true }).waitFor();
+  await page.locator('.question-item').first().waitFor({ timeout: 15000 });
+  log('a confirmed topic was added to reviews with questions written from course material');
+
+  await page.goBack();
+  await page.getByRole('button', { name: 'Start studying Graph Theory' }).click();
+  const studyDialog = page.getByRole('dialog');
+  await studyDialog.getByText('Past versions:').waitFor();
+  check(await studyDialog.getByRole('button', { name: 'Add to my reviews' }).isDisabled(), 'past-only topic needs explicit confirmation');
+  await studyDialog.getByRole('button', { name: 'Cancel' }).click();
+  log('past-version topics cannot be studied by accident');
+
+  await page.getByRole('tab', { name: 'Ask Recall' }).click();
+  await page.getByRole('button', { name: 'What should I review today?' }).click();
+  await page.locator('.msg.assistant', { hasText: 'Your syllabus lists it as confirmed' }).waitFor();
+  await page.locator('.msg.assistant .cites').waitFor();
+  await shot(page, 'assistant');
+  log('course-aware assistant streams an answer with source citations');
+
+  await page.getByRole('link', { name: 'Today' }).first().click();
+  await page.getByRole('heading', { name: 'What should I study?' }).waitFor();
+  log('Today shows recommendations with reasons');
+
   // Demo data, upcoming, progress
   await page.getByRole('link', { name: 'Settings' }).first().click();
   await page.getByRole('button', { name: 'Load demo data' }).click();
@@ -299,7 +396,7 @@ async function mobileFlow(browser) {
     ['progress', '/progress', 'Where your topics are'],
     ['settings', '/settings', 'Daily reminder'],
     ['new-topic', '/topics/new', 'What did you learn?'],
-    ['course', '/courses', 'Courses'],
+    ['connect', '/connect', 'Where do you study?'],
   ]) {
     await page.goto(`${base}${path}`);
     await page.getByRole('heading', { name: ready }).first().waitFor();
@@ -308,6 +405,12 @@ async function mobileFlow(browser) {
   }
   log('every main page fits a 390px screen without horizontal scrolling');
 
+  await page.goto(`${base}/courses`);
+  await page.getByRole('link', { name: /COMP 1805\b/ }).first().click();
+  await page.getByRole('tab', { name: 'Course knowledge' }).click();
+  await page.getByRole('heading', { name: 'Course knowledge profile' }).waitFor();
+  await noHorizontalOverflow(page, 'course knowledge');
+  await shot(page, 'mobile-course-knowledge');
   await page.goto(`${base}/`);
   await page.locator('.bottom-nav').getByRole('link', { name: 'Courses' }).click();
   await page.waitForURL('**/courses');

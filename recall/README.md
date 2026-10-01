@@ -37,7 +37,9 @@ Configuration lives in environment variables (see `.env.example`). The only secr
 | `INSECURE_COOKIES` | `false` | Allows production mode over plain HTTP (local testing only) |
 | `ANTHROPIC_API_KEY` | — | Turns on question generation (see below). Server-side only |
 | `QUESTION_GENERATION` | — | `on` to use an `ant auth login` profile instead of a key; `off` to disable |
-| `QUESTION_MODEL` | `claude-opus-5-5` | Claude model used to write questions |
+| `QUESTION_MODEL` / `AI_MODEL` | `claude-opus-5-5` | Claude model used for questions, document reading and the assistant |
+| `AI_FEATURES` | — | Same as `QUESTION_GENERATION`, for all AI features |
+| `WEB_SEARCH` | on with a key | `off` disables public resource search and page import |
 
 ## Tests
 
@@ -136,10 +138,107 @@ How the request is made:
 - **Without credentials** the feature is off. The UI hides the buttons, the API answers `503` with a clear message, and
   students write questions by hand as before. Tests use a fake generator, so `npm test` and the E2E run need no key.
 
+## Course knowledge
+
+Recall also builds a **Course Knowledge Profile** for each course a student connects to their school
+(Courses → *Add from your school*, or the *Course knowledge* tab on a course). The guiding rule is that **Recall never
+"knows" what a course teaches.** It collects *evidence* from sources and shows how strong that evidence is for the
+student's own term. The model and its rules live in `shared/knowledge.ts`; the services are in `server/knowledge/`.
+
+```
+University → Department → Course → Course version (term + year) → Sources → Topics → Subtopics
+                                                                         ↘ Assessments
+Student → Student course (their version) → their Recall course → reviews (personal memory)
+```
+
+**Evidence statuses** are computed per student, relative to their term, and shown as icon + text throughout the UI and
+in the assistant's context:
+
+| Status | When |
+| --- | --- |
+| Confirmed | Listed in a current-term syllabus or outline (official, the instructor's, or the student's own confirmed syllabus), or the current academic year's official calendar |
+| In your materials | From notes or materials the student uploaded for this term |
+| Past versions | Listed only in material from another term |
+| Public resource | From an open educational resource or a general web page |
+| AI suggestion | Suggested by AI; no course document supports it |
+| Unconfirmed | Origin unknown, or a broader source lists it but the current syllabus doesn't |
+
+**Conflicts are never resolved silently.** When a current syllabus exists, a topic it doesn't list can't be Confirmed by
+an older or broader source. Instead it shows "Sources differ: listed in Fall 2025 outline but not in your Fall 2026
+syllabus." **What am I missing?** lists past-version topics with that warning. Sources are ranked from current official
+to current instructor, current student material, past official, past student material, open educational resources,
+general web, and finally AI. Web results are classified by domain (the school's own domain counts as official), never
+by what a page claims about itself.
+
+**Syllabus flow.**
+1. Upload a PDF, Word (.docx) or text file; images and scanned PDFs need the AI reader.
+2. Text is extracted locally and indexed for retrieval.
+3. Claude extracts the course code, term, instructor, weekly topics with dates and subtopics, objectives, assessments,
+   readings and terms. Without AI, a pattern-based syllabus reader is used instead.
+4. The student reviews and edits the result. Warnings flag a different course code or term, and a different term
+   files the document as past-term material.
+5. Nothing is used until the student confirms it.
+
+**Studying.** *Start studying* moves a course topic into the existing spaced-repetition engine as a Recall topic linked
+by key. Only Confirmed or own-material topics can be added without an explicit "study it anyway". Generated questions
+are grounded in that topic's subtopics and the best-matching passages from the student's uploads, and record their
+difficulty and source. Reviews, ratings and scheduling are unchanged, and course knowledge is never altered by
+personal performance.
+
+**What should I study?** ranks topics using real signals only, each shown with its reasons: due or overdue reviews,
+recent Forgot/Hard ratings, pinned priorities, assessments within 21 days that cover the topic, and syllabus topics
+already taught but not yet in reviews. Past-version, public and AI topics are never recommended.
+
+**Study assistant (RAG).** Each question is answered after Recall assembles a context block:
+- the course, school and term;
+- every source with its reliability tier;
+- topics grouped by evidence status, plus any conflicts;
+- assessments;
+- the student's review record, including what they struggled with in the last 14 days;
+- the top BM25 passages from their uploads.
+
+The system prompt requires the model to prefer that context, cite `[S1]`/`[D1]`, never state an unconfirmed topic as
+course content, and say when information is missing. Answers stream to the browser as Server-Sent Events.
+
+**Resources.** *Search the web* builds queries such as `"Carleton University" COMP 1805 mathematical induction` and
+runs them through Claude's server-side web search tool. Results come from the tool's own result blocks, never from
+model-written text, and are ranked by the tiers above. Students can save links (metadata only) or *Read topics* from a
+page. Page fetching happens on Anthropic's side, and the page text itself is not stored, only the extracted facts and
+the link.
+
+**Global vs personal, privacy, copyright.**
+- **Shared:** the catalog (schools, departments, courses, versions) and public sources.
+- **Private:** everything a student uploads, extracts, saves or asks the AI to suggest. All queries filter
+  `visibility = 'public' OR owner = me`, and tests check that another student can't see any of it.
+- **Retrieval stays private:** the full-text index of a student's uploads is filtered by owner.
+- **Unlinking** a course deletes that student's private course material but keeps their reviews.
+- **Student discoveries stay private:** sharing them globally would need moderation, which isn't built.
+
+**Adapters** (`server/knowledge/providers.ts`):
+
+| Adapter | What it does | Implementation |
+| --- | --- | --- |
+| Course repository | Stores the catalog, versions, sources and topics | `repository.ts` (SQL) |
+| Document parser | Reads uploaded files | `parsers.ts` (unpdf, mammoth, file-type detection by content) |
+| AI provider | Extraction, suggestions, assistant | `claude.ts` |
+| Web search provider | Search and page fetch | `claude.ts` (Claude's server-side web tools) |
+| Embedding provider | Semantic retrieval | Interface only, not configured: Anthropic has no embeddings endpoint, so retrieval uses SQLite FTS5 (BM25). Plug in a provider here for semantic search. |
+| Reminder channel | Delivers reminders | `server/services/reminders.ts` |
+
+**Starter catalog.** Carleton University, the University of Toronto and the University of Waterloo, with a few course
+codes (`server/knowledge/catalog.ts`). It contains **no topics**, and course titles are entered from general knowledge
+and labelled unverified. Students can add schools, departments and courses, which are marked "Added by a student". To
+add more in bulk:
+
+```bash
+npm run catalog:import -- my-schools.json   # { "universities": [{ "name", "city", "website", "domain", "departments": [{ "name", "courses": [{ "code", "title" }] }] }] }
+```
+
 ## Data model
 
-`users` · `sessions` · `courses` · `topics` · `questions` · `reviews` · `review_answers`
-(schema: `server/db/migrations.ts`)
+`users` · `sessions` · `courses` · `topics` · `questions` · `reviews` · `review_answers`, plus course knowledge:
+`universities` · `departments` · `catalog_courses` · `course_versions` · `sources` · `knowledge_topics` · `assessments`
+· `student_courses` · `documents` · `document_chunks` (FTS5) (schema: `server/db/migrations.ts`, migrations 1–3)
 
 - Topics carry `user_id` alongside `course_id`, enforced by a composite foreign key to `courses(id, user_id)`. Every
   query is scoped by owner, and a topic can never point at another user's course.
@@ -182,4 +281,13 @@ How the request is made:
   material, and the UI tells them to. Automatic generation adds API cost per review (two questions); set
   `QUESTION_GENERATION=off` to disable it.
 - The Upcoming page shows each topic's *next* review. Later dates depend on future ratings, so they aren't plotted.
+- **Course knowledge:**
+  - The starter catalog is unverified. This build environment couldn't reach university websites, so no official
+    course content ships with Recall; it arrives only from syllabi, imports and public pages.
+  - Images and scanned PDFs need the AI reader. The pattern-based reader handles common "Week N: Topic" schedules
+    and tables, but not every syllabus layout.
+  - Retrieval is keyword-based (BM25) until an embedding provider is added.
+- **Not exercised against the live API:** the Claude-backed features (document reading, assistant, web search,
+  suggestions, questions). No credentials were available here; they are tested with stand-ins that check request
+  shapes and error handling.
 - `node:sqlite` still prints an "experimental" warning on Node 22. The npm scripts suppress it.

@@ -7,6 +7,7 @@ import {
   CalendarDays,
   CheckCircle2,
   Flame,
+  GraduationCap,
   Lightbulb,
   ListChecks,
   Play,
@@ -21,6 +22,8 @@ import { useUser } from '../auth/AuthContext';
 import { StatusBadge } from '../components/Badges';
 import { BarChart } from '../components/BarChart';
 import { CourseFormModal } from '../components/CourseForm';
+import { RecommendationHeading, RecommendationList } from '../components/knowledge/Recommendations';
+import { useRecommendations } from '../api/knowledge';
 import { EmptyState, ErrorState, PageSkeleton } from '../components/States';
 import { useToast } from '../components/Toast';
 import { dueLabel, formatLongDate, formatWeekday, formatDate, greeting, pluralize } from '../lib/format';
@@ -58,6 +61,7 @@ export function TodayPage() {
               <DueList data={data} />
             </div>
             <div className="stack-lg">
+              <StudyNext />
               {data.insights.length > 0 && <Insights insights={data.insights} />}
               <WeekAhead data={data} />
             </div>
@@ -248,6 +252,19 @@ function WeekAhead({ data }: { data: Dashboard }) {
   );
 }
 
+function StudyNext() {
+  const recs = useRecommendations();
+  if (!recs.data || recs.data.length === 0) return null;
+  return (
+    <section className="card" aria-labelledby="study-next">
+      <div id="study-next" style={{ marginBottom: 8 }}>
+        <RecommendationHeading />
+      </div>
+      <RecommendationList items={recs.data} showCourse />
+    </section>
+  );
+}
+
 function DemoBanner() {
   const remove = useRemoveDemo();
   const toast = useToast();
@@ -285,7 +302,10 @@ function Onboarding() {
         title="You don't have any courses yet."
         actions={
           <>
-            <button type="button" className="btn btn-primary" onClick={() => setOpen(true)}>
+            <Link to="/connect" className="btn btn-primary">
+              <GraduationCap size={18} aria-hidden /> Find my course at my school
+            </Link>
+            <button type="button" className="btn btn-secondary" onClick={() => setOpen(true)}>
               <Plus size={18} aria-hidden /> Add your first course
             </button>
             <button

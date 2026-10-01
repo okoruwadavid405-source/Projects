@@ -39,7 +39,8 @@ export function csrfProtection(req: Request, _res: Response, next: NextFunction)
     }
   }
   const hasBody = Number(req.headers['content-length'] ?? 0) > 0 || req.headers['transfer-encoding'] !== undefined;
-  if (hasBody && !req.is('application/json')) {
+  // JSON, or raw file bytes for uploads: neither can be sent cross-site by an HTML form without a CORS preflight.
+  if (hasBody && !req.is('application/json') && !req.is('application/octet-stream')) {
     return next(new AppError(415, 'unsupported_media_type', 'Requests must be sent as JSON.'));
   }
   next();

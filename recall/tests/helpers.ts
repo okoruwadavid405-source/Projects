@@ -4,6 +4,8 @@ import { createApp } from '../server/app.js';
 import { openDatabase } from '../server/db/connection.js';
 import type { AppContext } from '../server/lib/context.js';
 import type { QuestionGenerator } from '../server/services/questionGenerator.js';
+import { seedCatalog, STARTER_CATALOG } from '../server/knowledge/catalog.js';
+import { NO_PROVIDERS, type KnowledgeProviders } from '../server/knowledge/providers.js';
 
 export interface TestServer {
   ctx: AppContext;
@@ -12,9 +14,14 @@ export interface TestServer {
   close(): Promise<void>;
 }
 
-export async function startServer(nowIso = '2026-10-01T15:00:00Z', questionGenerator: QuestionGenerator | null = null): Promise<TestServer> {
+export async function startServer(
+  nowIso = '2026-10-01T15:00:00Z',
+  questionGenerator: QuestionGenerator | null = null,
+  knowledge: KnowledgeProviders = NO_PROVIDERS,
+): Promise<TestServer> {
   let now = new Date(nowIso);
-  const ctx: AppContext = { db: openDatabase(':memory:'), clock: { now: () => now }, secureCookies: false, questionGenerator };
+  const ctx: AppContext = { db: openDatabase(':memory:'), clock: { now: () => now }, secureCookies: false, questionGenerator, knowledge };
+  seedCatalog(ctx.db, STARTER_CATALOG, now.toISOString());
   const server: Server = await new Promise((resolve) => {
     const s = createApp(ctx).listen(0, () => resolve(s));
   });

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { BookOpen, Plus } from 'lucide-react';
+import { BookOpen, GraduationCap, Plus } from 'lucide-react';
 import { useCourses } from '../api/hooks';
 import { DemoBadge } from '../components/Badges';
 import { CourseFormModal } from '../components/CourseForm';
@@ -23,6 +23,9 @@ export function CoursesPage() {
         </div>
         {courses.length > 0 && (
           <div className="actions">
+            <Link to="/connect" className="btn btn-secondary">
+              <GraduationCap size={18} aria-hidden /> Add from your school
+            </Link>
             <button type="button" className="btn btn-primary" onClick={() => setOpen(true)}>
               <Plus size={18} aria-hidden /> New course
             </button>
@@ -36,9 +39,14 @@ export function CoursesPage() {
             icon={<BookOpen size={26} />}
             title="You don't have any courses yet."
             actions={
-              <button type="button" className="btn btn-primary" onClick={() => setOpen(true)}>
-                <Plus size={18} aria-hidden /> Add your first course
-              </button>
+              <>
+                <Link to="/connect" className="btn btn-primary">
+                  <GraduationCap size={18} aria-hidden /> Find my course at my school
+                </Link>
+                <button type="button" className="btn btn-secondary" onClick={() => setOpen(true)}>
+                  <Plus size={18} aria-hidden /> Add a course manually
+                </button>
+              </>
             }
           >
             Courses keep your topics organised — add one for each class you're taking.

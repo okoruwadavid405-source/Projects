@@ -64,7 +64,13 @@ export function getTopicDetail(ctx: AppContext, userId: number, timezone: string
   };
 }
 
-export function createTopic(ctx: AppContext, userId: number, timezone: string, input: TopicCreate): TopicDetail {
+export function createTopic(
+  ctx: AppContext,
+  userId: number,
+  timezone: string,
+  input: TopicCreate,
+  options: { knowledgeKey?: string | null; autoGenerate?: boolean } = {},
+): TopicDetail {
   const today = todayFor(ctx, timezone);
   assertNotFuture(input.learnedOn, today);
   requireCourse(ctx, userId, input.courseId);
@@ -80,13 +86,14 @@ export function createTopic(ctx: AppContext, userId: number, timezone: string, i
           description: input.description,
           understanding: input.understanding,
           schedule: initialSchedule(input.learnedOn, input.understanding, today),
+          knowledgeKey: options.knowledgeKey ?? null,
         },
         now,
       );
       for (const q of input.questions) questions.insertQuestion(ctx.db, topicId, q, now);
       return topicId;
     });
-    if (input.questions.length === 0) fillNewTopic(ctx, userId, id);
+    if (input.questions.length === 0 && options.autoGenerate !== false) fillNewTopic(ctx, userId, id);
     return getTopicDetail(ctx, userId, timezone, id);
   } catch (err) {
     if (isUniqueViolation(err)) throw duplicate(input.title);
@@ -97,6 +104,7 @@ export function createTopic(ctx: AppContext, userId: number, timezone: string, i
 export function updateTopic(ctx: AppContext, userId: number, timezone: string, id: number, input: TopicUpdate): TopicDetail {
   const today = todayFor(ctx, timezone);
   const row = requireTopic(ctx, userId, id);
+  if (input.pinned !== undefined) repo.setTopicPinned(ctx.db, userId, id, input.pinned, nowIso(ctx));
   const courseId = input.courseId ?? row.course_id;
   if (courseId !== row.course_id) requireCourse(ctx, userId, courseId);
   const learnedOn = input.learnedOn ?? (row.learned_on as LocalDate);
